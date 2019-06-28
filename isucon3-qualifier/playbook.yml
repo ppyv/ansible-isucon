@@ -1,5 +1,5 @@
 - hosts: all
-  sudo: yes
+  become: yes
   tasks:
     - yum: name=* state=latest
     - yum: name=libselinux-python
@@ -37,8 +37,11 @@
         chown -R isucon:isucon /home/isucon/
 
     # mysql
-    - yum: name=http://dev.mysql.com/get/mysql-community-release-el6-5.noarch.rpm
-    - yum: name=mysql-community-server
+    - yum: name=https://dev.mysql.com/get/mysql80-community-release-el6-3.noarch.rpm
+    - shell: |
+        yum-config-manager --disable mysql80-community
+        yum-config-manager --enable mysql56-community
+    - yum: name=mysql-community-server update_cache=yes
     - yum: name=mysql-community-devel
     - yum: name=mysql-community-embedded
     - service: name=mysqld enabled=yes state=started
@@ -62,15 +65,16 @@
 
     # xbuild
     - yum: name=gcc
-    - sudo_user: isucon
+    - become_user: isucon
       git: repo=https://github.com/tagomoris/xbuild.git dest=/home/isucon/.xbuild
 
     # go
-    - sudo_user: isucon
-      shell: .xbuild/go-install 1.8 /home/isucon/local/go
+    - become_user: isucon
+      shell: .xbuild/go-install 1.9 /home/isucon/local/go
       args:
+        chdir: /home/isucon/
         creates: /home/isucon/local/go/bin/go
-    - sudo_user: isucon
+    - become_user: isucon
       shell: |
         set -e
         source ./env.sh
@@ -78,72 +82,88 @@
         go get github.com/go-sql-driver/mysql
         go get github.com/gorilla/mux
         go get github.com/gorilla/sessions
+        go get github.com/gorilla/context
         go get github.com/bradfitz/gomemcache/memcache
         go build -o app
       args:
+        chdir: /home/isucon/
         creates: /home/isucon/webapp/go/app
 
     # nodejs
-    - sudo_user: isucon
+    - become_user: isucon
       shell: .xbuild/node-install v0.10.20 /home/isucon/local/node-v0.10
       args:
+        chdir: /home/isucon/
         creates: /home/isucon/local/node-v0.10/bin/node
-    - sudo_user: isucon
+    - become_user: isucon
       shell: |
         set -e
         source ./env.sh
         cd webapp/nodejs/
+        npm config set strict-ssl false
         npm install
+        npm config set strict-ssl true
       args:
+        chdir: /home/isucon/
         creates: /home/isucon/webapp/nodejs/node_modules
 
     # perl
-    - sudo_user: isucon
+    - become_user: isucon
       shell: .xbuild/perl-install 5.18.1 /home/isucon/local/perl-5.18
       args:
+        chdir: /home/isucon/
         creates: /home/isucon/local/perl-5.18/bin/perl
-    - sudo_user: isucon
+    - become_user: isucon
       shell: |
         set -e
         source ./env.sh
         cd webapp/perl/
         curl -L https://cpanmin.us | perl - Carton
         carton install
+      args:
+        chdir: /home/isucon/
 
     # ruby
     - yum: name=openssl-devel
     - yum: name=readline-devel
     - yum: name=zlib-devel
-    - sudo_user: isucon
+    - become_user: isucon
       #shell: .xbuild/ruby-install 2.0.0-p247 /home/isucon/local/ruby-2.0
       shell: .xbuild/ruby-install 2.0.0-p645 /home/isucon/local/ruby-2.0
       args:
+        chdir: /home/isucon/
         creates: /home/isucon/local/ruby-2.0/bin/ruby
-    - sudo_user: isucon
+    - become_user: isucon
       shell: |
         set -e
         source ./env.sh
         cd webapp/ruby/
-        gem install bundler foreman
+        gem install bundler -v 1.17.3
+        gem install foreman
         bundle install --deployment --without development
+      args:
+        chdir: /home/isucon/
 
     # python
     - yum: name=patch
-    - sudo_user: isucon
+    - become_user: isucon
       shell: .xbuild/python-install 3.3.2 /home/isucon/local/python-3.3
       args:
+        chdir: /home/isucon/
         creates: /home/isucon/local/python-3.3/bin/python
-    - sudo_user: isucon
+    - become_user: isucon
       shell: |
         set -e
         source ./env.sh
         cd webapp/python/
-        easy_install flask gunicorn python3-memcached PyMySQL3
+        pip3 install --upgrade flask gunicorn python3-memcached PyMySQL==0.8.0 Werkzeug==0.14.1 click==6.7 itsdangerous==0.24 MarkupSafe==1.0
+      args:
+        chdir: /home/isucon/
 
     # bench
     - yum: name=pigz
     - yum: name=libxml2-devel
-    - sudo_user: isucon
+    - become_user: isucon
       shell: |
         set -e
         source ./env.sh
@@ -151,11 +171,14 @@
         go get github.com/moovweb/gokogiri
         go get github.com/wsxiaoys/terminal
         go build
+      args:
+        chdir: /home/isucon/
 
     # supervisor package is too old
     # - yum: name=supervisor
-    - yum: name=python-setuptools
-    - easy_install: name=supervisor
+    - yum: name=python-pip
+    - pip: name=supervisor version=3.4.0
+    - pip: name=meld3 version=1.0.0 state=forcereinstall
     - copy: src=files/etc/init.d/supervisord dest=/etc/init.d/ mode=a+x
     - copy: src=files/etc/sysconfig/supervisord dest=/etc/sysconfig/
     - copy: src=files/etc/supervisord.conf dest=/etc/
