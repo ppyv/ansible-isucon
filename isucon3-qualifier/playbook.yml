@@ -95,6 +95,9 @@
       args:
         chdir: /home/isucon/
         creates: /home/isucon/local/node-v0.10/bin/node
+      register: result
+      # なぜか成功しても必ず rc = 1 になるので
+      failed_when: result.rc >= 2
     - become_user: isucon
       shell: |
         set -e
@@ -133,6 +136,10 @@
       args:
         chdir: /home/isucon/
         creates: /home/isucon/local/ruby-2.0/bin/ruby
+      register: result
+      # xbuild のお節介で bundler を同時インストールしようとし、 Ruby が古すぎて
+      # エラー終了するため。そのとき rc = 2 であり、その他のエラーは 1 だから。
+      failed_when: result.rc == 1
     - become_user: isucon
       shell: |
         set -e
